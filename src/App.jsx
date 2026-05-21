@@ -122,6 +122,54 @@ function Avatar({name,size=36,T}){
       {initials}
     </div>
   );
+// ─── Client Autocomplete (top-level to avoid remount bug) ────────────────────
+function ClientAutocomplete({value,onChange,onPick,onNewClient,clients,T,IS}){
+  const [search,setSearch]=useState(value||"");
+  const [open,setOpen]=useState(false);
+  // sync external reset
+  useEffect(()=>{ setSearch(value||""); },[value]);
+  const matches=useMemo(()=>
+    search.length>=2?clients.filter(c=>c.name?.toLowerCase().includes(search.toLowerCase())).slice(0,6):[]
+  ,[search,clients]);
+  return(
+    <div style={{position:"relative"}}>
+      <div style={{position:"relative"}}>
+        <input
+          style={{...IS,paddingRight:"32px"}}
+          placeholder="Digite o nome da cliente..."
+          value={search}
+          autoComplete="off"
+          onChange={e=>{setSearch(e.target.value);onChange(e.target.value);setOpen(true);}}
+          onFocus={()=>setOpen(true)}
+          onBlur={()=>setTimeout(()=>setOpen(false),220)}
+        />
+        <div style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",color:T.textMuted,pointerEvents:"none"}}>{Ic.search}</div>
+      </div>
+      {open&&(matches.length>0||search.length>=2)&&(
+        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:T.card,border:`1px solid ${T.cardBorder}`,borderRadius:"10px",zIndex:400,boxShadow:"0 8px 24px rgba(0,0,0,.35)",overflow:"hidden"}}>
+          {matches.map(c=>(
+            <div key={c.id}
+              onMouseDown={e=>{e.preventDefault();setSearch(c.name);onPick(c);setOpen(false);}}
+              style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.rowBorder}`}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.input}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <Avatar name={c.name} size={28} T={T}/>
+              <div>
+                <div style={{fontSize:".85rem",fontWeight:600,color:T.text}}>{c.name}</div>
+                {c.phone&&<div style={{fontSize:".72rem",color:T.textSub}}>{fmtPhone(c.phone)}</div>}
+              </div>
+            </div>
+          ))}
+          {search.length>=2&&(
+            <div onMouseDown={e=>{e.preventDefault();onNewClient(search);setOpen(false);}}
+              style={{padding:"9px 14px",fontSize:".78rem",color:T.accent,cursor:"pointer",display:"flex",alignItems:"center",gap:"6px",borderTop:matches.length>0?`1px solid ${T.rowBorder}`:"none"}}>
+              {Ic.plus} Cadastrar "{search}" como nova cliente
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -199,48 +247,7 @@ export default function StudioManager(){
     setClientSearch(""); setShowClientDrop(false);
   };
 
-  function ClientAutocomplete({value,onChange,onPick,T,IS}){
-    const [search,setSearch]=useState(value||"");
-    const [open,setOpen]=useState(false);
-    const matches=useMemo(()=>search.length>=2?clients.filter(c=>c.name?.toLowerCase().includes(search.toLowerCase())).slice(0,6):[],[search]);
-    return(
-      <div style={{position:"relative"}}>
-        <div style={{position:"relative"}}>
-          <input style={{...IS,paddingRight:"32px"}} placeholder="Nome da cliente..." value={search}
-            onChange={e=>{setSearch(e.target.value);onChange(e.target.value);setOpen(true);}}
-            onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),200)}/>
-          <div style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",color:T.textMuted}}>{Ic.search}</div>
-        </div>
-        {open&&matches.length>0&&(
-          <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:T.card,border:`1px solid ${T.cardBorder}`,borderRadius:"10px",zIndex:300,boxShadow:"0 8px 24px rgba(0,0,0,.3)",overflow:"hidden"}}>
-            {matches.map(c=>(
-              <div key={c.id} onMouseDown={()=>{setSearch(c.name);onPick(c);setOpen(false);}}
-                style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${T.rowBorder}`}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.input} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <Avatar name={c.name} size={28} T={T}/>
-                <div>
-                  <div style={{fontSize:".85rem",fontWeight:600,color:T.text}}>{c.name}</div>
-                  {c.phone&&<div style={{fontSize:".72rem",color:T.textSub}}>{fmtPhone(c.phone)}</div>}
-                </div>
-              </div>
-            ))}
-            <div onMouseDown={()=>{setCf({...CF0,name:search});setEditCli(null);setMCli(true);setOpen(false);}}
-              style={{padding:"9px 14px",fontSize:".78rem",color:T.accent,cursor:"pointer",display:"flex",alignItems:"center",gap:"6px"}}>
-              {Ic.plus} Cadastrar "{search}" como nova cliente
-            </div>
-          </div>
-        )}
-        {open&&search.length>=2&&matches.length===0&&(
-          <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:T.card,border:`1px solid ${T.cardBorder}`,borderRadius:"10px",zIndex:300,overflow:"hidden"}}>
-            <div onMouseDown={()=>{setCf({...CF0,name:search});setEditCli(null);setMCli(true);setOpen(false);}}
-              style={{padding:"10px 14px",fontSize:".82rem",color:T.accent,cursor:"pointer",display:"flex",alignItems:"center",gap:"6px"}}>
-              {Ic.plus} Cadastrar "{search}" como nova cliente
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
+  // ClientAutocomplete moved to top-level
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   const saveEntry=async()=>{
@@ -837,9 +844,11 @@ export default function StudioManager(){
       {mE&&<Modal title="Nova Entrada" onClose={()=>setME(false)} T={T}>
         <Field label="Data" T={T}><input type="date" style={IS} value={ef.date} onChange={e=>setEf(p=>({...p,date:e.target.value}))}/></Field>
         <Field label="Cliente" T={T}>
-          <ClientAutocomplete value={ef.client} IS={IS} T={T}
+          <ClientAutocomplete
+            value={ef.client} IS={IS} T={T} clients={clients}
             onChange={v=>setEf(p=>({...p,client:v,clientId:"",phone:""}))}
-            onPick={c=>setEf(p=>({...p,client:c.name,clientId:c.id,phone:c.phone||""}))}/>
+            onPick={c=>setEf(p=>({...p,client:c.name,clientId:c.id,phone:c.phone||""}))}
+            onNewClient={name=>{setCf({...CF0,name});setEditCli(null);setMCli(true);}}/>
         </Field>
         <Field label="Telefone (WhatsApp)" T={T}><input style={IS} placeholder="(11) 99999-9999" value={ef.phone} onChange={e=>setEf(p=>({...p,phone:e.target.value}))}/></Field>
         <Field label="Serviço" T={T}>
@@ -881,9 +890,11 @@ export default function StudioManager(){
           <Field label="Horário" T={T}><input type="time" style={IS} value={af.time} onChange={e=>setAf(p=>({...p,time:e.target.value}))}/></Field>
         </div>
         <Field label="Cliente" T={T}>
-          <ClientAutocomplete value={af.client} IS={IS} T={T}
+          <ClientAutocomplete
+            value={af.client} IS={IS} T={T} clients={clients}
             onChange={v=>setAf(p=>({...p,client:v,clientId:"",phone:""}))}
-            onPick={c=>setAf(p=>({...p,client:c.name,clientId:c.id,phone:c.phone||""}))}/>
+            onPick={c=>setAf(p=>({...p,client:c.name,clientId:c.id,phone:c.phone||""}))}
+            onNewClient={name=>{setCf({...CF0,name});setEditCli(null);setMCli(true);}}/>
         </Field>
         <Field label="Telefone (WhatsApp)" T={T}><input style={IS} placeholder="(11) 99999-9999" value={af.phone} onChange={e=>setAf(p=>({...p,phone:e.target.value}))}/></Field>
         <Field label="Serviço" T={T}><select style={IS} value={af.service} onChange={e=>setAf(p=>({...p,service:e.target.value}))}>{services.map(s=><option key={s.id}>{s.name}</option>)}</select></Field>
