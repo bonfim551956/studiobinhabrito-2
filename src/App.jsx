@@ -122,11 +122,10 @@ function Avatar({name,size=36,T}){
       {initials}
     </div>
   );
+}
+
 // ─── Client Autocomplete (top-level to avoid remount bug) ────────────────────
 function ClientAutocomplete({onPick,onNewClient,clients,T,IS,resetKey}){
-  // Fully uncontrolled input — no state sync issues
-  const inputRef = useState(null);
-  const ref = inputRef[1], getRef = inputRef[0];
   const [open,setOpen]=useState(false);
   const [search,setSearch]=useState("");
 
