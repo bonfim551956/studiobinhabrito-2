@@ -1,9 +1,15 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   collection, addDoc, deleteDoc, doc, onSnapshot,
-  updateDoc, query, orderBy, serverTimestamp, setDoc
+  updateDoc, query, orderBy, serverTimestamp, setDoc, getDoc
 } from "firebase/firestore";
 import { db } from "./firebase.js";
+
+// ─── Auth helpers (localStorage-based, senha no Firebase) ─────────────────────
+const SESSION_KEY = "sbb_session";
+const getSession  = () => { try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch{ return null; } };
+const setSession  = (v) => localStorage.setItem(SESSION_KEY, JSON.stringify(v));
+const clearSession= () => localStorage.removeItem(SESSION_KEY);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt      = (v) => Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -64,6 +70,8 @@ const Ic={
   trash:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>,
   close:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>,
   edit:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  menu:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M3 12h18M3 6h18M3 18h18"/></svg>,
+  xmark:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M18 6 6 18M6 6l12 12"/></svg>,
   sun:    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="15" height="15"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>,
   moon:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="15" height="15"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
   prev:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16"><path d="M15 18l-6-6 6-6"/></svg>,
@@ -120,6 +128,184 @@ function Avatar({name,size=36,T}){
   return(
     <div style={{width:size,height:size,borderRadius:"50%",background:color+"22",border:`2px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.36,fontWeight:700,color,flexShrink:0}}>
       {initials}
+    </div>
+  );
+}
+
+
+// ─── Login Screen ─────────────────────────────────────────────────────────────
+function LoginScreen({onLogin}){
+  const [user,setUser]       = useState("");
+  const [pass,setPass]       = useState("");
+  const [error,setError]     = useState("");
+  const [loading,setLoading] = useState(false);
+  const [showPass,setShowPass]= useState(false);
+
+  const handle = async(e)=>{
+    e.preventDefault();
+    if(!user||!pass){ setError("Preencha usuário e senha."); return; }
+    setLoading(true); setError("");
+    try{
+      const snap = await getDoc(doc(db,"config","auth"));
+      if(!snap.exists()){ setError("Configuração não encontrada."); setLoading(false); return; }
+      const data = snap.data();
+      const okUser = data.username || "admin";
+      const okPass = data.password || "binha2024";
+      if(user.toLowerCase()===okUser.toLowerCase() && pass===okPass){
+        setSession({ user: okUser, at: Date.now() });
+        onLogin(okUser);
+      } else {
+        setError("Usuário ou senha incorretos.");
+      }
+    } catch(err){
+      setError("Erro ao conectar. Verifique sua internet.");
+    }
+    setLoading(false);
+  };
+
+  const IS2 = {width:"100%",background:"#080412",border:"1px solid #281840",borderRadius:"10px",padding:"11px 14px",color:"#f0e6ff",fontSize:".9rem",outline:"none",fontFamily:"'DM Sans',sans-serif",transition:"border-color .2s"};
+
+  return(
+    <div style={{minHeight:"100vh",background:"#05020e",display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem",fontFamily:"'DM Sans',sans-serif"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        .login-input:focus{border-color:#7c3aed!important;outline:none}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes pulse2{0%,100%{opacity:.6}50%{opacity:1}}
+      `}</style>
+
+      {/* Glow BG */}
+      <div style={{position:"fixed",inset:0,overflow:"hidden",pointerEvents:"none"}}>
+        <div style={{position:"absolute",top:"-20%",right:"-10%",width:"500px",height:"500px",borderRadius:"50%",background:"radial-gradient(circle,#7c3aed1a,transparent 70%)"}}/>
+        <div style={{position:"absolute",bottom:"-20%",left:"-10%",width:"400px",height:"400px",borderRadius:"50%",background:"radial-gradient(circle,#ec489918,transparent 70%)"}}/>
+      </div>
+
+      <div style={{width:"100%",maxWidth:"380px",animation:"fadeUp .4s ease"}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:"2rem"}}>
+          <div style={{width:"68px",height:"68px",borderRadius:"20px",background:"linear-gradient(135deg,#7c3aed,#a855f7)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 1rem",fontSize:"2rem",boxShadow:"0 8px 32px #7c3aed40"}}>✦</div>
+          <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.6rem",color:"#f0e6ff",marginBottom:".25rem"}}>Studio Binha Brito</h1>
+          <p style={{fontSize:".75rem",color:"#4a3465",letterSpacing:".12em",textTransform:"uppercase"}}>Sistema de Gestão</p>
+        </div>
+
+        {/* Card */}
+        <div style={{background:"#0c0818",border:"1px solid #1e1030",borderRadius:"20px",padding:"2rem",boxShadow:"0 32px 80px rgba(0,0,0,.6)"}}>
+          <h2 style={{fontSize:"1rem",color:"#c4a8e8",marginBottom:"1.5rem",fontWeight:500}}>Acesse sua conta</h2>
+
+          <form onSubmit={handle}>
+            <div style={{marginBottom:"1rem"}}>
+              <label style={{display:"block",fontSize:".68rem",color:"#6a4a90",marginBottom:"5px",letterSpacing:".07em",textTransform:"uppercase"}}>Usuário</label>
+              <input className="login-input" style={IS2} placeholder="admin" value={user} autoComplete="username"
+                onChange={e=>setUser(e.target.value)}/>
+            </div>
+
+            <div style={{marginBottom:"1.5rem"}}>
+              <label style={{display:"block",fontSize:".68rem",color:"#6a4a90",marginBottom:"5px",letterSpacing:".07em",textTransform:"uppercase"}}>Senha</label>
+              <div style={{position:"relative"}}>
+                <input className="login-input" style={{...IS2,paddingRight:"44px"}}
+                  type={showPass?"text":"password"} placeholder="••••••••"
+                  value={pass} autoComplete="current-password"
+                  onChange={e=>setPass(e.target.value)}/>
+                <button type="button" onClick={()=>setShowPass(v=>!v)}
+                  style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#6a4a90",fontSize:".75rem",padding:"2px 4px"}}>
+                  {showPass?"Ocultar":"Mostrar"}
+                </button>
+              </div>
+            </div>
+
+            {error&&(
+              <div style={{background:"#2a0a0a",border:"1px solid #5a1a1a",borderRadius:"10px",padding:"10px 14px",marginBottom:"1rem",fontSize:".82rem",color:"#f87171",display:"flex",alignItems:"center",gap:"6px"}}>
+                ⚠ {error}
+              </div>
+            )}
+
+            <button type="submit" disabled={loading}
+              style={{width:"100%",background:loading?"#2d1f42":"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",border:"none",borderRadius:"12px",padding:"12px",fontSize:".95rem",fontWeight:700,cursor:loading?"not-allowed":"pointer",fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:"8px",transition:"opacity .2s"}}>
+              {loading?(
+                <><div style={{width:"16px",height:"16px",border:"2px solid #ffffff40",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite"}}/> Entrando...</>
+              ):"Entrar →"}
+            </button>
+          </form>
+        </div>
+
+        <p style={{textAlign:"center",marginTop:"1.5rem",fontSize:".72rem",color:"#2d1f42"}}>
+          Studio Binha Brito © {new Date().getFullYear()}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Change Password Modal ────────────────────────────────────────────────────
+function ChangePasswordModal({onClose,T,currentUser}){
+  const [form,setForm]   = useState({newUser:"",newPass:"",confirm:""});
+  const [error,setError] = useState("");
+  const [success,setSuccess]=useState(false);
+  const [loading,setLoading]=useState(false);
+
+  const save = async()=>{
+    if(!form.newPass){ setError("Digite a nova senha."); return; }
+    if(form.newPass.length<6){ setError("Senha deve ter ao menos 6 caracteres."); return; }
+    if(form.newPass!==form.confirm){ setError("As senhas não coincidem."); return; }
+    setLoading(true); setError("");
+    try{
+      const upd = { password: form.newPass };
+      if(form.newUser) upd.username = form.newUser;
+      await setDoc(doc(db,"config","auth"), upd, {merge:true});
+      setSuccess(true);
+      setTimeout(()=>onClose(),1800);
+    } catch{
+      setError("Erro ao salvar. Tente novamente.");
+    }
+    setLoading(false);
+  };
+
+  const IS3={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:"10px",padding:"9px 13px",color:T.text,fontSize:".875rem",outline:"none",fontFamily:"'DM Sans',sans-serif"};
+  const LS3={display:"block",fontSize:".68rem",color:T.textMuted,marginBottom:"4px",letterSpacing:".06em",textTransform:"uppercase"};
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:T.card,border:`1px solid ${T.cardBorder}`,borderRadius:"18px",width:"100%",maxWidth:"420px",padding:"1.75rem",boxShadow:"0 40px 100px rgba(0,0,0,.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
+          <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:T.text}}>🔐 Alterar Acesso</h3>
+          <button onClick={onClose} style={{background:T.input,border:"none",borderRadius:"8px",padding:"5px",cursor:"pointer",color:T.textMuted,display:"flex"}}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        {success?(
+          <div style={{textAlign:"center",padding:"1.5rem 0"}}>
+            <div style={{fontSize:"2rem",marginBottom:"1rem"}}>✅</div>
+            <div style={{color:T.green,fontWeight:600}}>Alterado com sucesso!</div>
+          </div>
+        ):(
+          <>
+            <div style={{marginBottom:"1rem"}}>
+              <label style={LS3}>Novo usuário (deixe em branco para manter)</label>
+              <input style={IS3} placeholder={`atual: ${currentUser}`} value={form.newUser}
+                onChange={e=>setForm(p=>({...p,newUser:e.target.value}))}/>
+            </div>
+            <div style={{marginBottom:"1rem"}}>
+              <label style={LS3}>Nova senha</label>
+              <input type="password" style={IS3} placeholder="Mín. 6 caracteres" value={form.newPass}
+                onChange={e=>setForm(p=>({...p,newPass:e.target.value}))}/>
+            </div>
+            <div style={{marginBottom:"1.5rem"}}>
+              <label style={LS3}>Confirmar nova senha</label>
+              <input type="password" style={IS3} placeholder="Repita a senha" value={form.confirm}
+                onChange={e=>setForm(p=>({...p,confirm:e.target.value}))}/>
+            </div>
+            {error&&<div style={{background:T.red+"15",border:`1px solid ${T.red}40`,borderRadius:"10px",padding:"10px 14px",marginBottom:"1rem",fontSize:".82rem",color:T.red}}>⚠ {error}</div>}
+            <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+              <button onClick={onClose} style={{background:T.input,color:T.textMuted,border:`1px solid ${T.inputBorder}`,borderRadius:"10px",padding:"8px 16px",cursor:"pointer",fontSize:".85rem",fontFamily:"'DM Sans',sans-serif"}}>Cancelar</button>
+              <button onClick={save} disabled={loading} style={{background:"linear-gradient(135deg,#7c3aed,#a855f7)",color:"#fff",border:"none",borderRadius:"10px",padding:"8px 18px",cursor:"pointer",fontSize:".85rem",fontWeight:600,fontFamily:"'DM Sans',sans-serif"}}>
+                {loading?"Salvando...":"Salvar"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -190,7 +376,18 @@ function ClientAutocomplete({onPick,onNewClient,clients,T,IS,resetKey}){
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function StudioManager(){
   const [theme,setTheme]     = useState(()=>localStorage.getItem("sbTheme")||"dark");
+  const [sidebarOpen,setSidebarOpen] = useState(false);
   const T = theme==="dark"?DARK:LIGHT;
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const [loggedUser,setLoggedUser] = useState(()=>getSession()?.user||null);
+  const [mChangePass,setMChangePass] = useState(false);
+
+  const handleLogin  = (user)=>setLoggedUser(user);
+  const handleLogout = ()=>{ clearSession(); setLoggedUser(null); };
+
+  // If not logged in, show login screen
+  if(!loggedUser) return <LoginScreen onLogin={handleLogin}/>;
 
   const [tab,setTab]         = useState("dashboard");
   const [entries,setEntries] = useState([]);
@@ -428,18 +625,57 @@ export default function StudioManager(){
         input[type="month"]::-webkit-calendar-picker-indicator,input[type="date"]::-webkit-calendar-picker-indicator{filter:${theme==="dark"?"invert(1)":"none"};cursor:pointer}
         option{background:${T.card};color:${T.text}} select{color:${T.text}}
         a{transition:opacity .15s}a:hover{opacity:.85}
+        @media(max-width:768px){
+          .sb-sidebar{position:fixed!important;left:-220px!important;top:0;bottom:0;z-index:100;transition:left .25s ease!important;box-shadow:none}
+          .sb-sidebar.open{left:0!important;box-shadow:4px 0 24px rgba(0,0,0,.3)}
+          .sb-main{margin-left:0!important;padding:1rem!important}
+          .sb-hamburger{display:flex!important}
+          .sb-topbar{display:flex!important}
+          .kpi-grid{grid-template-columns:repeat(2,1fr)!important}
+          .chart-grid{grid-template-columns:1fr!important}
+          .two-col{grid-template-columns:1fr!important}
+          .three-col{grid-template-columns:1fr!important}
+          .hide-mobile{display:none!important}
+        }
+        @media(min-width:769px){
+          .sb-hamburger{display:none!important}
+          .sb-topbar{display:none!important}
+          .sb-overlay{display:none!important}
+        }
       `}</style>
 
+      {/* Mobile overlay */}
+      {sidebarOpen&&<div className="sb-overlay" onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:99,backdropFilter:"blur(2px)"}}/>}
+
+      {/* Mobile topbar */}
+      <div className="sb-topbar" style={{display:"none",position:"fixed",top:0,left:0,right:0,height:"56px",background:T.sidebar,borderBottom:`1px solid ${T.sidebarBorder}`,alignItems:"center",justifyContent:"space-between",padding:"0 1rem",zIndex:98}}>
+        <button className="sb-hamburger" onClick={()=>setSidebarOpen(o=>!o)}
+          style={{background:"none",border:"none",cursor:"pointer",color:T.accent,display:"flex",padding:"6px"}}>
+          {sidebarOpen?Ic.xmark:Ic.menu}
+        </button>
+        <div style={{fontFamily:"'Playfair Display',serif",fontSize:"1rem",color:T.accent,fontWeight:700}}>Studio Binha Brito</div>
+        <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")}
+          style={{background:"none",border:"none",cursor:"pointer",color:T.textMuted,display:"flex",padding:"6px"}}>
+          {theme==="dark"?Ic.sun:Ic.moon}
+        </button>
+      </div>
+
       {/* Sidebar */}
-      <aside style={{width:"190px",minHeight:"100vh",background:T.sidebar,borderRight:`1px solid ${T.sidebarBorder}`,display:"flex",flexDirection:"column",padding:"1.5rem .875rem",flexShrink:0,transition:"background .3s"}}>
+      <aside className={`sb-sidebar${sidebarOpen?" open":""}`} style={{width:"190px",minHeight:"100vh",background:T.sidebar,borderRight:`1px solid ${T.sidebarBorder}`,display:"flex",flexDirection:"column",padding:"1.5rem .875rem",flexShrink:0,transition:"background .3s"}}>
         <div style={{fontFamily:"'Playfair Display',serif",fontSize:"1.1rem",color:T.accent,lineHeight:1.25,marginBottom:".2rem"}}>Studio<br/>Binha Brito</div>
         <div style={{fontSize:".6rem",color:T.textSub,letterSpacing:".12em",textTransform:"uppercase",marginBottom:"1.75rem"}}>Gestão</div>
         {TABS.map(t=>{ const a=tab===t.id;
-          return <button key={t.id} onClick={()=>{setTab(t.id);setViewClient(null);}} style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:"10px",border:"none",cursor:"pointer",width:"100%",fontSize:".82rem",fontFamily:"'DM Sans',sans-serif",marginBottom:"2px",background:a?T.navActive:"transparent",color:a?T.navActiveText:T.navText,fontWeight:a?600:400,transition:"all .2s"}}>{t.i}{t.l}</button>;
+          return <button key={t.id} onClick={()=>{setTab(t.id);setViewClient(null);setSidebarOpen(false);}} style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 12px",borderRadius:"10px",border:"none",cursor:"pointer",width:"100%",fontSize:".82rem",fontFamily:"'DM Sans',sans-serif",marginBottom:"2px",background:a?T.navActive:"transparent",color:a?T.navActiveText:T.navText,fontWeight:a?600:400,transition:"all .2s"}}>{t.i}{t.l}</button>;
         })}
         <div style={{marginTop:"auto",borderTop:`1px solid ${T.sidebarBorder}`,paddingTop:".875rem"}}>
-          <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{...BT("g"),width:"100%",justifyContent:"center",fontSize:".75rem",marginBottom:"10px"}}>
+          <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} style={{...BT("g"),width:"100%",justifyContent:"center",fontSize:".75rem",marginBottom:"6px"}}>
             {theme==="dark"?Ic.sun:Ic.moon}{theme==="dark"?"Modo Claro":"Modo Escuro"}
+          </button>
+          <button onClick={()=>setMChangePass(true)} style={{...BT("g"),width:"100%",justifyContent:"center",fontSize:".75rem",marginBottom:"6px"}}>
+            🔐 Alterar Senha
+          </button>
+          <button onClick={handleLogout} style={{...BT("r"),width:"100%",justifyContent:"center",fontSize:".75rem",marginBottom:"10px"}}>
+            ⎋ Sair
           </button>
           <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:".7rem",color:dbOk?T.green:T.yellow}}>
             <div style={{width:"6px",height:"6px",borderRadius:"50%",background:dbOk?T.green:T.yellow,animation:dbOk?"":"pulse 1.5s infinite"}}/>
@@ -450,7 +686,7 @@ export default function StudioManager(){
       </aside>
 
       {/* Main */}
-      <main style={{flex:1,padding:"1.75rem 2rem",overflowY:"auto",transition:"background .3s"}}>
+      <main className="sb-main" style={{flex:1,padding:"1.75rem 2rem",overflowY:"auto",transition:"background .3s"}}>
         {loading?<Spinner T={T}/>:<>
 
         {/* ══ DASHBOARD ══ */}
@@ -459,7 +695,7 @@ export default function StudioManager(){
             <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:"1.5rem",color:T.text}}>Dashboard</h1>
             <span style={{fontSize:".8rem",color:T.textSub}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</span>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
+          <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1rem",marginBottom:"1.5rem"}}>
             {[
               {l:"Hoje – Entradas",v:fmt(kDay),c:T.accent},
               {l:"Mês – Entradas",v:fmt(kMon),c:T.blue},
@@ -467,7 +703,7 @@ export default function StudioManager(){
               {l:"Resultado Mês",v:fmt(kMon-kMonX),c:kMon-kMonX>=0?T.green:T.red},
             ].map(k=><div key={k.l} style={CARD}><div style={{fontSize:"1.3rem",fontFamily:"'Playfair Display',serif",fontWeight:700,color:k.c}}>{k.v}</div><div style={{fontSize:".68rem",color:T.textSub,textTransform:"uppercase",letterSpacing:".05em",marginTop:"4px"}}>{k.l}</div></div>)}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:"1.25rem",marginBottom:"1.25rem"}}>
+          <div className="chart-grid" style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:"1.25rem",marginBottom:"1.25rem"}}>
             <div style={CARD}>
               <div style={{fontSize:".72rem",color:T.textMuted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:"1rem"}}>Últimos 7 dias</div>
               {(()=>{const maxV=Math.max(...last7.map(d=>Math.max(d.inc,d.exp)),1);return(
@@ -494,7 +730,7 @@ export default function StudioManager(){
               );})}
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"1.25rem"}}>
+          <div className="three-col" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"1.25rem"}}>
             <div style={CARD}>
               <div style={{fontSize:".72rem",color:T.textMuted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:"1rem"}}>Últimas Entradas</div>
               {entries.slice(0,5).map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.rowBorder}`,fontSize:".8rem"}}><span style={{color:T.text}}>{e.client}<span style={{color:T.textSub}}> · {e.service}</span></span><span style={{color:T.accent,fontWeight:700}}>{fmt(e.value)}</span></div>)}
@@ -941,6 +1177,8 @@ export default function StudioManager(){
           <button style={BT()} onClick={confirmSvc}>{editSvc?"Salvar Alteração":"Adicionar Serviço"}</button>
         </div>
       </Modal>}
+      {/* ══ MODAL ALTERAR SENHA ══ */}
+      {mChangePass&&<ChangePasswordModal onClose={()=>setMChangePass(false)} T={T} currentUser={loggedUser}/>}
     </div>
   );
 }
