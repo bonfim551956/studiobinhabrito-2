@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   collection, addDoc, deleteDoc, doc, onSnapshot,
-  updateDoc, query, orderBy, serverTimestamp, setDoc, getDoc
+  updateDoc, query, orderBy, serverTimestamp, setDoc, getDoc,
+  writeBatch, getDocs, where
 } from "firebase/firestore";
 import { db } from "./firebase.js";
 
@@ -394,7 +395,18 @@ function StudioManager({loggedUser,handleLogout}){
   const delEntry  =id=>deleteDoc(doc(db,"entries",id));
   const delExpense=id=>deleteDoc(doc(db,"expenses",id));
   const delAppt   =id=>deleteDoc(doc(db,"appointments",id));
-  const delClient =id=>deleteDoc(doc(db,"clients",id));
+  const delClient = async(id) => {
+    // Delete client + remove phone/clientId from linked records (stops WA dispatch)
+    const batch = writeBatch(db);
+    batch.delete(doc(db,"clients",id));
+    // Mark linked appointments as inactive (remove phone so n8n won't dispatch)
+    const apptSnap = await getDocs(query(collection(db,"appointments"),where("clientId","==",id)));
+    apptSnap.forEach(d => batch.update(d.ref,{phone:"",clientId:"",ativo:false}));
+    // Mark linked entries as inactive
+    const entSnap = await getDocs(query(collection(db,"entries"),where("clientId","==",id)));
+    entSnap.forEach(d => batch.update(d.ref,{phone:"",clientId:""}));
+    await batch.commit();
+  };
   const updateApptStatus=(id,status)=>updateDoc(doc(db,"appointments",id),{status});
   const saveServices=async(list)=>{await setDoc(doc(db,"config","services"),{list});setServices(list);};
   const confirmSvc=async()=>{
