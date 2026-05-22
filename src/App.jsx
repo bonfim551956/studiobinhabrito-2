@@ -374,20 +374,12 @@ function ClientAutocomplete({onPick,onNewClient,clients,T,IS,resetKey}){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function StudioManager(){
+function StudioManager({loggedUser, handleLogout}){
   const [theme,setTheme]     = useState(()=>localStorage.getItem("sbTheme")||"dark");
   const [sidebarOpen,setSidebarOpen] = useState(false);
   const T = theme==="dark"?DARK:LIGHT;
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const [loggedUser,setLoggedUser] = useState(()=>getSession()?.user||null);
   const [mChangePass,setMChangePass] = useState(false);
-
-  const handleLogin  = (user)=>setLoggedUser(user);
-  const handleLogout = ()=>{ clearSession(); setLoggedUser(null); };
-
-  // If not logged in, show login screen
-  if(!loggedUser) return <LoginScreen onLogin={handleLogin}/>;
 
   const [tab,setTab]         = useState("dashboard");
   const [entries,setEntries] = useState([]);
@@ -1181,4 +1173,16 @@ export default function StudioManager(){
       {mChangePass&&<ChangePasswordModal onClose={()=>setMChangePass(false)} T={T} currentUser={loggedUser}/>}
     </div>
   );
+}
+
+
+// ─── Root App (handles auth state) ───────────────────────────────────────────
+export default function App(){
+  const [loggedUser,setLoggedUser] = useState(()=>getSession()?.user||null);
+
+  const handleLogin  = (user)=>{ setLoggedUser(user); };
+  const handleLogout = ()=>{ clearSession(); setLoggedUser(null); };
+
+  if(!loggedUser) return <LoginScreen onLogin={handleLogin}/>;
+  return <StudioManager loggedUser={loggedUser} handleLogout={handleLogout}/>;
 }
